@@ -22,10 +22,10 @@ Clear-Host
 
 # 1. [Pre-build Cache] Create a lookup table for ShortName -> DisplayName
 # This runs ONLY ONCE at script startup to avoid lagging the loop.
-Write-Host "Initializing service cache..." -ForegroundColor Gray
+# Write-Host "Initializing service cache..." -ForegroundColor Gray
 $ServiceDisplayNameMap = @{}
 Get-Service | ForEach-Object { $ServiceDisplayNameMap[$_.Name] = $_.DisplayName }
-Clear-Host
+# Clear-Host
 
 # Initialize script-scope variable for line counting
 $script:currentLineCount = 0
