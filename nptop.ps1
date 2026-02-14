@@ -9,7 +9,7 @@ $targetLuid = "11D3B"
 $interval = 1
 
 # [Config] Max process name length
-$maxNameLength = 35
+$maxNameLength = 60
 
 # [Config] Minimum utilization to show (0 = show all)
 $minUtilization = 0
@@ -18,6 +18,13 @@ $minUtilization = 0
 [Console]::CursorVisible = $false
 
 # Clear screen once at startup
+Clear-Host
+
+# 1. [Pre-build Cache] Create a lookup table for ShortName -> DisplayName
+# This runs ONLY ONCE at script startup to avoid lagging the loop.
+Write-Host "Initializing service cache..." -ForegroundColor Gray
+$ServiceDisplayNameMap = @{}
+Get-Service | ForEach-Object { $ServiceDisplayNameMap[$_.Name] = $_.DisplayName }
 Clear-Host
 
 # Initialize script-scope variable for line counting
@@ -59,11 +66,11 @@ try {
             $samples = $counters.CounterSamples
 
             $outputList = @()
-            $totalLoad = 0
+            $totalUtilization = 0
 
             foreach ($s in $samples) {
                 $val = $s.CookedValue
-                $totalLoad += $val
+                $totalUtilization += $val
 
                 # Only process items >= minUtilization
                 if ($val -ge $minUtilization) {
@@ -72,13 +79,28 @@ try {
 
                         try {
                             $pName = (Get-Process -Id $pidVal -ErrorAction SilentlyContinue).ProcessName
+                            
+                            # [Service Name Lookup Logic]
+                            if ($pName -eq "svchost") {
+                                # Get service short names via tasklist (CSV format is fast)
+                                $svcRaw = (tasklist /svc /fi "PID eq $pidVal" /fo csv | ConvertFrom-Csv)."Services"
+                                
+                                # tasklist may return multiple services, we pick the first one
+                                if ($svcRaw) {
+                                    $firstSvc = ($svcRaw -split ",")[0].Trim()
+
+                                    # Fast lookup from our pre-built memory cache
+                                    if ($ServiceDisplayNameMap.ContainsKey($firstSvc)) {
+                                        $pName = "svchost (" + $ServiceDisplayNameMap[$firstSvc] + ")"
+                                    } elseif ($firstSvc -and $firstSvc -ne "N/A") {
+                                        # Fallback to short name if not found in map
+                                        $pName = "svchost ($firstSvc)"
+                                    }
+                                }
+                            }
                         } catch {
                             $pName = "Unknown/Ended"
                         }
-
-                        # Special Labeling
-                        if ($pName -eq "svchost") { $pName = "svchost (Camera/System)" }
-                        if ($pName -eq "audiodg") { $pName = "audiodg (Audio/Voice)" }
 
                         # Name Truncation
                         if ($pName.Length -gt $maxNameLength) {
@@ -107,11 +129,11 @@ try {
 
             # Calculate available space for progress bar
             $barWidth = [Math]::Max(10, $tableTotalWidth - 22)
-            $fillCount = [int]([Math]::Min($totalLoad, 100) / 100 * $barWidth)
+            $fillCount = [int]([Math]::Min($totalUtilization, 100) / 100 * $barWidth)
             $barStr = "[" + ("|" * $fillCount) + (" " * ($barWidth - $fillCount)) + "]"
 
             # Display Utilization
-            Write-SafeLine ("Utilization: {0,5:N1}% {1}  " -f $totalLoad, $barStr) "Yellow"
+            Write-SafeLine ("Utilization: {0,5:N1}% {1}  " -f $totalUtilization, $barStr) "Yellow"
             Write-SafeLine "$separator"
 
             $fmtString = "{0,-8} {1,-" + $maxNameLength + "} {2,-10}"
