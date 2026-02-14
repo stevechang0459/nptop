@@ -79,20 +79,23 @@ try {
 
                         try {
                             $pName = (Get-Process -Id $pidVal -ErrorAction SilentlyContinue).ProcessName
-                            
+
                             # [Service Name Lookup Logic]
+                            # Only apply to svchost, using strictly dynamic lookup
                             if ($pName -eq "svchost") {
-                                # Get service short names via tasklist (CSV format is fast)
-                                $svcRaw = (tasklist /svc /fi "PID eq $pidVal" /fo csv | ConvertFrom-Csv)."Services"
-                                
-                                # tasklist may return multiple services, we pick the first one
-                                if ($svcRaw) {
+                                # Use /nh (No Header) to avoid language issues (Chinese vs English headers)
+                                # Force headers to "Image","PID","Services"
+                                $tasklistOut = tasklist /svc /fi "PID eq $pidVal" /fo csv /nh | ConvertFrom-Csv -Header "Image","PID","Services"
+                                $svcRaw = $tasklistOut.Services
+
+                                # tasklist may return multiple services (e.g. "Svc1,Svc2"), we pick the first one
+                                if ($svcRaw -and $svcRaw -ne "N/A") {
                                     $firstSvc = ($svcRaw -split ",")[0].Trim()
 
                                     # Fast lookup from our pre-built memory cache
                                     if ($ServiceDisplayNameMap.ContainsKey($firstSvc)) {
                                         $pName = "svchost (" + $ServiceDisplayNameMap[$firstSvc] + ")"
-                                    } elseif ($firstSvc -and $firstSvc -ne "N/A") {
+                                    } else {
                                         # Fallback to short name if not found in map
                                         $pName = "svchost ($firstSvc)"
                                     }
