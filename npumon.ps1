@@ -40,10 +40,11 @@ try {
                 # Always add to Total Load for accuracy
                 $totalLoad += $val
 
-                # Only process items with usage > 0.1%
+                # Only process items with usage > $minUtilization
                 if ($val -ge $minUtilization) {
                     if ($s.InstanceName -match "pid_(\d+)_") {
-                        $pidVal = $matches[1]
+                        # Cast PID to int for correct sorting
+                        $pidVal = [int]$matches[1]
 
                         try {
                             $pName = (Get-Process -Id $pidVal -ErrorAction SilentlyContinue).ProcessName
@@ -110,10 +111,15 @@ try {
                 # Write-Host " (No active processes > 0.1%)                            " -ForegroundColor DarkGray
                 Write-Host " (No active processes)                                   " -ForegroundColor DarkGray
             } else {
-                $outputList | Sort-Object Usage -Descending | ForEach-Object {
+                # [SORTING LOGIC]
+                $outputList | Sort-Object `
+                    @{Expression={ $_.Usage -le 0 }; Ascending=$true}, `
+                    @{Expression="Usage"; Descending=$true}, `
+                    @{Expression="Process"; Ascending=$true}, `
+                    @{Expression="PID"; Ascending=$true} | ForEach-Object {
+
                     $u = $_.Usage
-                    # Since we filtered > 0.1, all items here will be Green
-                    if ($u -gt 0.1) {
+                    if ($u -gt 0) {
                         $color = "Green"
                         $uStr = "{0,5:N1}%" -f $u
                     } else {
@@ -143,5 +149,5 @@ try {
     # Restore cursor when user presses Ctrl+C
     [Console]::CursorVisible = $true
     Clear-Host
-    Write-Host "Monitor stopped. Cursor Restored." -ForegroundColor Gray
+    Write-Host "Monitor stopped. Cursor restored." -ForegroundColor Gray
 }
