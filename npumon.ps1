@@ -1,30 +1,29 @@
 # ========================================================
-#  NPU Raw Dashboard (Hidden Cursor / Zero-Flicker / Aligned)
+# Windows PowerShell NPU Performance Monitor v1.0
 # ========================================================
 
-# [設定] 指定您的 NPU LUID
+# [Config] Specify your NPU LUID
 $targetLuid = "11D3B"
 
-# [設定] 取樣間隔 (秒)
+# [Config] Sampling interval (seconds)
 $interval = 1
 
-# [設定] Process Name 最大顯示長度
+# [Config] Max process name length
 $maxNameLength = 35
 
-# 1. 隱藏游標 (讓畫面看起來更像原生 App)
+# Hide cursor (makes it look like a native app)
 [Console]::CursorVisible = $false
 
-# 2. 程式啟動時，先清空一次畫面
+# Clear screen once at startup
 Clear-Host
 
-# 使用 try...finally 確保腳本結束時 (Ctrl+C) 游標會恢復
+# Use try...finally to ensure cursor is restored on exit (Ctrl+C)
 try {
     while ($true) {
         try {
-            # 3. 將游標重置到左上角 (這就是不閃爍的秘密)
+            # Reset cursor to top-left (the secret to zero-flicker)
             try { [Console]::SetCursorPosition(0, 0) } catch { Clear-Host }
 
-            # --- 資料抓取邏輯 (維持不變) ---
             $path = "\GPU Engine(*luid*$targetLuid*engtype_3D)\Utilization Percentage"
             $counters = Get-Counter -Counter $path -SampleInterval $interval -ErrorAction Stop
             $samples = $counters.CounterSamples
@@ -45,11 +44,10 @@ try {
                         $pName = "Unknown/Ended"
                     }
 
-                    # 特殊標註
+                    # Special labeling
                     if ($pName -eq "svchost") { $pName = "svchost (Camera/System)" }
                     if ($pName -eq "audiodg") { $pName = "audiodg (Audio/Voice)" }
 
-                    # --- 長度裁切邏輯 ---
                     if ($pName.Length -gt $maxNameLength) {
                         $pName = $pName.Substring(0, $maxNameLength - 3) + "..."
                     }
@@ -62,24 +60,23 @@ try {
                 }
             }
 
-            # --- UI 繪製 (含對齊邏輯) ---
             $timeStr = Get-Date -Format "HH:mm:ss"
 
-            # 使用空白填充 (PadRight) 來覆蓋舊文字
-            Write-Host "=== Windows Powershell NPU Performance Monitor v1.0 ===   " -ForegroundColor Cyan
-            Write-Host "                                                            " # 清除舊行
+            # Use whitespace padding (PadRight) to overwrite old text
+            Write-Host "=== Windows PowerShell NPU Performance Monitor v1.0 ===   " -ForegroundColor Cyan
+            Write-Host "                                                            " # Clear previous line artifacts
             Write-Host "Time   : $timeStr                                           "
             Write-Host "Target : $targetLuid (Engine: 3D)                           "
 
-            # --- [UI 優化核心] 自動計算寬度與對齊 ---
-
-            # 1. 計算表格的總寬度 (PID=8 + Space=1 + Name=$max + Space=1 + Usage=10)
+            # Calculate total table width (PID=8 + Space=1 + Name=$max + Space=1 + Usage=10)
             $tableTotalWidth = 8 + 1 + $maxNameLength + 1 + 10
 
-            # 2. 準備分隔線
+            # Prepare separator
             $separator = "-" * $tableTotalWidth
 
-            # 3. 計算進度條可用的空間
+            # Calculate available space for progress bar
+            # Label text "Utilization: 100.0% " takes ~20 chars, plus brackets [] takes 2 chars
+            # Dynamic calculation: Total Width - Label Length - Borders(2)
             $labelLength = 20
             $barWidth = $tableTotalWidth - $labelLength - 2
             if ($barWidth -lt 10) { $barWidth = 10 }
@@ -96,7 +93,7 @@ try {
             Write-Host ($fmtString -f "PID", "Process Name", "Usage")
             Write-Host "$separator  "
 
-            # 顯示列表
+            # Display list
             if ($outputList.Count -eq 0) {
                 Write-Host " (No counters found)                                    " -ForegroundColor Red
             } else {
@@ -109,27 +106,28 @@ try {
                         $color = "DarkGray"
                         $uStr = "  0.0%"
                     }
-                    # 這裡補上 5 個空白，確保覆蓋掉舊資料
+                    # Add 5 spaces padding to ensure old data is overwritten
                     Write-Host (($fmtString -f $_.PID, $_.Process, $uStr) + "     ") -ForegroundColor $color
                 }
             }
 
-            # 3. [關鍵] 清除下方殘留的舊資料 (Ghosting)
+            # Clear residual old data at the bottom (Ghosting)
+            # If there were 20 lines before and now only 5, we print blank lines to clear the bottom
             for ($i = 0; $i -lt 10; $i++) {
                 Write-Host (" " * ($tableTotalWidth + 5))
             }
 
         } catch {
-            # 錯誤處理時才用 Clear-Host
+            # Only use Clear-Host during error handling
             Clear-Host
-            Write-Host "=== Windows Powershell NPU Performance Monitor v1.0 ===" -ForegroundColor Cyan
-            Write-Host "Performance monitor paused, error while accessing counters." -ForegroundColor Yellow
+            Write-Host "=== Windows PowerShell NPU Performance Monitor v1.0 ===" -ForegroundColor Cyan
+            Write-Host "Monitor paused. Error accessing performance counters." -ForegroundColor Yellow
             Start-Sleep 1
         }
     }
 } finally {
-    # 4. [重要] 當使用者按 Ctrl+C 結束時，恢復游標
+    # Restore cursor when user presses Ctrl+C
     [Console]::CursorVisible = $true
     Clear-Host
-    Write-Host "Monitor Stopped. Cursor Restored." -ForegroundColor Gray
+    Write-Host "Monitor stopped. Cursor Restored." -ForegroundColor Gray
 }
