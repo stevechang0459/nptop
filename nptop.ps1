@@ -3,7 +3,98 @@
 # ========================================================
 
 # [Config] Specify your NPU LUID
-$targetLuid = "11D3B"
+# $targetLuid = "11D3B"
+$targetLuid = $null
+
+# Helper function to sanitize LUID hex strings
+function Sanitize-Luid ($rawHex) {
+    try {
+        if ([string]::IsNullOrWhiteSpace($rawHex)) { return $null }
+        return [Convert]::ToInt64($rawHex, 16).ToString("X")
+    } catch { return $rawHex }
+}
+
+# Diagnostic Function: Dynamically map LUIDs to physical PnP devices
+function Get-DynamicHardwareMap {
+    Write-Host "`n--- [Hardware Mapping Diagnostic] ---" -ForegroundColor Cyan
+
+    # Retrieve PnP devices related to Display or AI Accelerators
+    $pnpDevices = Get-CimInstance Win32_PnPSignedDriver | Where-Object {
+        $_.DeviceClass -match "DISPLAY" -or $_.Description -match "NPU|AI|Accelerator|Compute|Graphics"
+    }
+
+    # Retrieve physical paths containing LUIDs from performance counters
+    $counterPaths = (Get-Counter -ListSet "GPU Engine").PathsWithInstances | Where-Object { $_ -match "luid_" }
+
+    $uniqueLuidsInSystem = @{}
+    foreach ($path in $counterPaths) {
+        if ($path -match "luid_0x[0-9A-Fa-f]+_(0x[0-9A-Fa-f]+)_") {
+            $l = Sanitize-Luid $matches[1]
+            $uniqueLuidsInSystem[$l] = $true
+        }
+    }
+
+    Write-Host "Detected LUIDs in Performance Counters: $($uniqueLuidsInSystem.Keys -join ', ')" -ForegroundColor Yellow
+    Write-Host "Detected Hardware Candidates in PnP System:" -ForegroundColor Yellow
+
+    foreach ($dev in $pnpDevices) {
+        Write-Host " -> Name: $($dev.Description)" -ForegroundColor White
+        Write-Host "    Class: $($dev.DeviceClass) / Provider: $($dev.Manufacturer)" -ForegroundColor DarkGray
+    }
+}
+
+# --- Start Detection Process ---
+Write-Host "Scanning for NPU/GPU LUIDs..." -ForegroundColor Cyan
+try {
+    # Display hardware inventory for observation only
+    Get-DynamicHardwareMap
+
+    # Retrieve raw physical paths from GPU Engine counters
+    $instances = (Get-Counter -ListSet "GPU Engine" -ErrorAction Stop).PathsWithInstances
+
+    Write-Host ""
+    Write-Host "Found $($instances.Count) counter instances." -ForegroundColor Yellow
+    Write-Host "Printing raw paths:" -ForegroundColor Gray
+
+    # Categorize by LUID to avoid flooding the screen.
+    # Print one representative raw path per LUID.
+    $rawMap = @{}
+    $luidMap = @{}
+
+    foreach ($path in $instances) {
+        # Do not sanitize here; extract the LUID part directly from the raw string
+        if ($path -match "luid_0x[0-9A-Fa-f]+_(0x[0-9A-Fa-f]+)_") {
+            $rawLuid = $matches[1] # Captures raw string, e.g., 0x00000000_0x00011E3D
+            if (-not $rawMap.ContainsKey($rawLuid)) {
+                $rawMap[$rawLuid] = $path
+                $luidMap[(Sanitize-Luid $rawLuid)] = $true
+            }
+        }
+    }
+
+    # Output raw path information
+    foreach ($key in $rawMap.Keys) {
+        Write-Host "--------------------------------------------------"
+        Write-Host " [LUID String]     : $key" -ForegroundColor White
+        Write-Host " [Full Path]       : $($rawMap[$key])" -ForegroundColor DarkGray
+        Write-Host " [Sanitized LUID]  : $(Sanitize-Luid $key)" -ForegroundColor Green
+    }
+    Write-Host "--------------------------------------------------`n"
+
+    # Determine target LUID
+    $sortedList = $luidMap.Keys | Sort-Object
+    $targetLuid = $sortedList[-1]
+    Write-Host "Decision: Auto-selected $targetLuid" -ForegroundColor Cyan
+
+    # Write-Host "Starting monitor in 3 seconds..."
+    # Start-Sleep -Seconds 3
+
+} catch {
+    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+    exit
+}
+
+# pause
 
 # [Config] Sampling interval (seconds)
 $interval = 1
@@ -123,8 +214,8 @@ try {
             $timeStr = Get-Date -Format "HH:mm:ss"
 
             # Header section
-            Write-SafeLine "top    : $timeStr"
-            Write-SafeLine "Target : $targetLuid (Engine: 3D)"
+            Write-SafeLine "top  : $timeStr"
+            Write-SafeLine "luid : $targetLuid (Engine: 3D)"
 
             # Calculate layout
             $tableTotalWidth = 8 + 1 + $maxNameLength + 1 + 10
