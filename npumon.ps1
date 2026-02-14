@@ -24,9 +24,17 @@ Clear-Host
 try {
     while ($true) {
         try {
-            # Reset cursor to top-left (the secret to zero-flicker)
+            # Reset cursor to top-left
             try { [Console]::SetCursorPosition(0, 0) } catch { Clear-Host }
 
+            # 2. Get Window Dimensions (Dynamic Check)
+            $winHeight = $Host.UI.RawUI.WindowSize.Height
+            $winWidth = $Host.UI.RawUI.WindowSize.Width
+            # Reserve 1 line at bottom to prevent auto-scroll when writing the last character
+            $maxLines = $winHeight - 1
+            $currentLineCount = 0
+
+            # --- Data Retrieval ---
             $path = "\GPU Engine(*luid*$targetLuid*engtype_3D)\Utilization Percentage"
             $counters = Get-Counter -Counter $path -SampleInterval $interval -ErrorAction Stop
             $samples = $counters.CounterSamples
@@ -70,13 +78,28 @@ try {
                 }
             }
 
+            # --- UI Rendering ---
+
+            # Helper function to write line safely
+            function Write-SafeLine ($text, $color="White") {
+                if ($script:currentLineCount -lt $script:maxLines) {
+                    # PadRight ensures we overwrite old characters on this line
+                    $padded = $text.PadRight($script:winWidth - 1)
+                    # Trim to avoid wrapping if exact width
+                    if ($padded.Length -ge $script:winWidth) { $padded = $padded.Substring(0, $script:winWidth - 1) }
+
+                    Write-Host $padded -ForegroundColor $color
+                    $script:currentLineCount++
+                }
+            }
+
             $timeStr = Get-Date -Format "HH:mm:ss"
 
-            # Use whitespace padding to overwrite old text
-            Write-Host "=== Windows PowerShell NPU Performance Monitor v1.0 ===   " -ForegroundColor Cyan
-            Write-Host "                                                            "
-            Write-Host "Time   : $timeStr                                           "
-            Write-Host "Target : $targetLuid (Engine: 3D)                           "
+            # Header Section
+            Write-SafeLine "=== Windows PowerShell NPU Performance Monitor v1.0 ===" "Cyan"
+            Write-SafeLine " "
+            Write-SafeLine "Time   : $timeStr"
+            Write-SafeLine "Target : $targetLuid (Engine: 3D)"
 
             # Calculate table width
             $tableTotalWidth = 8 + 1 + $maxNameLength + 1 + 10
@@ -87,29 +110,21 @@ try {
             # Calculate available space for progress bar
             # Label text "Utilization: 100.0% " takes ~20 chars, plus brackets [] takes 2 chars
             # Dynamic calculation: Total Width - Label Length - Borders(2)
-            $labelLength = 20
-            $barWidth = $tableTotalWidth - $labelLength - 2
-            if ($barWidth -lt 10) { $barWidth = 10 }
+            $barWidth = [Math]::Max(10, $tableTotalWidth - 22)
+            $fillCount = [int]([Math]::Min($totalLoad, 100) / 100 * $barWidth)
+            $barStr = "[" + ("|" * $fillCount) + (" " * ($barWidth - $fillCount)) + "]"
 
-            $cappedLoad = [Math]::Min($totalLoad, 100)
-            $fillCount = [int](($cappedLoad / 100) * $barWidth)
-            $emptyCount = $barWidth - $fillCount
-            $barStr = "[" + ("|" * $fillCount) + (" " * $emptyCount) + "]"
+            # Display Utilization
+            Write-SafeLine ("Utilization: {0,5:N1}% {1}  " -f $totalLoad, $barStr) "Yellow"
+            Write-SafeLine "$separator"
 
-            # Display Total Load
-            Write-Host ("Utilization: {0,5:N1}% {1}  " -f $totalLoad, $barStr) -ForegroundColor Yellow
-            Write-Host "$separator  "
-
-            # Display Header
             $fmtString = "{0,-8} {1,-" + $maxNameLength + "} {2,-10}"
-            Write-Host ($fmtString -f "PID", "Process Name", "Usage")
-            Write-Host "$separator  "
+            Write-SafeLine ($fmtString -f "PID", "Process Name", "Usage")
+            Write-SafeLine "$separator"
 
-            # Display List
+            # Data List Section
             if ($outputList.Count -eq 0) {
-                # Padding ensures we cover any previous text
-                # Write-Host " (No active processes > 0.1%)                            " -ForegroundColor DarkGray
-                Write-Host " (No active processes)                                   " -ForegroundColor DarkGray
+                Write-SafeLine " (No active processes)" "DarkGray"
             } else {
                 # [SORTING LOGIC]
                 $outputList | Sort-Object `
@@ -117,6 +132,8 @@ try {
                     @{Expression="Usage"; Descending=$true}, `
                     @{Expression="Process"; Ascending=$true}, `
                     @{Expression="PID"; Ascending=$true} | ForEach-Object {
+                    # Stop printing if we run out of screen space
+                    if ($currentLineCount -ge $maxLines) { break }
 
                     $u = $_.Usage
                     if ($u -gt 0) {
@@ -127,14 +144,15 @@ try {
                         $uStr = "  0.0%"
                     }
                     # Add 5 spaces padding to ensure old data is overwritten
-                    Write-Host (($fmtString -f $_.PID, $_.Process, $uStr) + "     ") -ForegroundColor $color
+                    Write-SafeLine (($fmtString -f $_.PID, $_.Process, $uStr) + "     ") $color
                 }
             }
 
-            # Clear residual old data at the bottom (Ghosting)
-            # If there were 20 lines before and now only 5, we print blank lines to clear the bottom
-            for ($i = 0; $i -lt 10; $i++) {
-                Write-Host (" " * ($tableTotalWidth + 5))
+            # --- Cleaning Residual Lines (Anti-Ghosting) ---
+            # Fill the REST of the screen with empty lines to clear old data
+            # But DO NOT exceed window height
+            while ($currentLineCount -lt $maxLines) {
+                Write-SafeLine " "
             }
 
         } catch {
