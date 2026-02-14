@@ -96,9 +96,9 @@ try {
             $timeStr = Get-Date -Format "HH:mm:ss"
 
             # Header Section
-            Write-SafeLine "=== Windows PowerShell NPU Performance Monitor v1.0 ===" "Cyan"
-            Write-SafeLine " "
-            Write-SafeLine "Time   : $timeStr"
+            # Write-SafeLine "=== Windows PowerShell NPU Performance Monitor v1.0 ===" "Cyan"
+            # Write-SafeLine " "
+            Write-SafeLine "top    : $timeStr"
             Write-SafeLine "Target : $targetLuid (Engine: 3D)"
 
             # Calculate table width
@@ -158,7 +158,7 @@ try {
         } catch {
             # Only use Clear-Host during error handling
             Clear-Host
-            Write-Host "=== Windows PowerShell NPU Performance Monitor v1.0 ===" -ForegroundColor Cyan
+            # Write-Host "=== Windows PowerShell NPU Performance Monitor v1.0 ===" -ForegroundColor Cyan
             Write-Host "Monitor paused. Error accessing performance counters." -ForegroundColor Yellow
             Start-Sleep 1
         }
