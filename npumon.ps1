@@ -11,6 +11,9 @@ $interval = 1
 # [Config] Max process name length
 $maxNameLength = 35
 
+# [Config] Minimum utilization to show (Set to 0 to show everything)
+$minUtilization = 0
+
 # Hide cursor (makes it look like a native app)
 [Console]::CursorVisible = $false
 
@@ -33,42 +36,48 @@ try {
 
             foreach ($s in $samples) {
                 $val = $s.CookedValue
+
+                # Always add to Total Load for accuracy
                 $totalLoad += $val
 
-                if ($s.InstanceName -match "pid_(\d+)_") {
-                    $pidVal = $matches[1]
+                # Only process items with usage > 0.1%
+                if ($val -ge $minUtilization) {
+                    if ($s.InstanceName -match "pid_(\d+)_") {
+                        $pidVal = $matches[1]
 
-                    try {
-                        $pName = (Get-Process -Id $pidVal -ErrorAction SilentlyContinue).ProcessName
-                    } catch {
-                        $pName = "Unknown/Ended"
-                    }
+                        try {
+                            $pName = (Get-Process -Id $pidVal -ErrorAction SilentlyContinue).ProcessName
+                        } catch {
+                            $pName = "Unknown/Ended"
+                        }
 
-                    # Special labeling
-                    if ($pName -eq "svchost") { $pName = "svchost (Camera/System)" }
-                    if ($pName -eq "audiodg") { $pName = "audiodg (Audio/Voice)" }
+                        # Special labeling
+                        if ($pName -eq "svchost") { $pName = "svchost (Camera/System)" }
+                        if ($pName -eq "audiodg") { $pName = "audiodg (Audio/Voice)" }
 
-                    if ($pName.Length -gt $maxNameLength) {
-                        $pName = $pName.Substring(0, $maxNameLength - 3) + "..."
-                    }
+                        # Name truncation
+                        if ($pName.Length -gt $maxNameLength) {
+                            $pName = $pName.Substring(0, $maxNameLength - 3) + "..."
+                        }
 
-                    $outputList += [PSCustomObject]@{
-                        PID = $pidVal
-                        Process = $pName
-                        Usage = $val
+                        $outputList += [PSCustomObject]@{
+                            PID = $pidVal
+                            Process = $pName
+                            Usage = $val
+                        }
                     }
                 }
             }
 
             $timeStr = Get-Date -Format "HH:mm:ss"
 
-            # Use whitespace padding (PadRight) to overwrite old text
+            # Use whitespace padding to overwrite old text
             Write-Host "=== Windows PowerShell NPU Performance Monitor v1.0 ===   " -ForegroundColor Cyan
-            Write-Host "                                                            " # Clear previous line artifacts
+            Write-Host "                                                            "
             Write-Host "Time   : $timeStr                                           "
             Write-Host "Target : $targetLuid (Engine: 3D)                           "
 
-            # Calculate total table width (PID=8 + Space=1 + Name=$max + Space=1 + Usage=10)
+            # Calculate table width
             $tableTotalWidth = 8 + 1 + $maxNameLength + 1 + 10
 
             # Prepare separator
@@ -86,19 +95,24 @@ try {
             $emptyCount = $barWidth - $fillCount
             $barStr = "[" + ("|" * $fillCount) + (" " * $emptyCount) + "]"
 
+            # Display Total Load
             Write-Host ("Utilization: {0,5:N1}% {1}  " -f $totalLoad, $barStr) -ForegroundColor Yellow
             Write-Host "$separator  "
 
+            # Display Header
             $fmtString = "{0,-8} {1,-" + $maxNameLength + "} {2,-10}"
             Write-Host ($fmtString -f "PID", "Process Name", "Usage")
             Write-Host "$separator  "
 
-            # Display list
+            # Display List
             if ($outputList.Count -eq 0) {
-                Write-Host " (No counters found)                                    " -ForegroundColor Red
+                # Padding ensures we cover any previous text
+                # Write-Host " (No active processes > 0.1%)                            " -ForegroundColor DarkGray
+                Write-Host " (No active processes)                                   " -ForegroundColor DarkGray
             } else {
                 $outputList | Sort-Object Usage -Descending | ForEach-Object {
                     $u = $_.Usage
+                    # Since we filtered > 0.1, all items here will be Green
                     if ($u -gt 0.1) {
                         $color = "Green"
                         $uStr = "{0,5:N1}%" -f $u
