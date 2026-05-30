@@ -8,8 +8,13 @@ It is written entirely in **PowerShell**, requiring no external dependencies or 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg)
 ![PowerShell](https://img.shields.io/badge/PowerShell-%3E%3D5.1-5391FE.svg)
 
+## 📸 Screenshot
+
+![nptop terminal interface showing NPU utilization](images/screenshot.png)
+
 ## ✨ Key Features
 
+* **Auto-Detection:** Automatically scans Windows Performance Counters to find and select the correct NPU LUID, eliminating the need for manual setup.
 * **Zero-Flicker UI:** Uses cursor positioning (`SetCursorPosition`) instead of clearing the screen, ensuring a smooth, artifact-free update cycle.
 * **Smart Service Resolution:** Automatically resolves generic `svchost.exe` processes into their full, human-readable service display names (e.g., `svchost (Windows Camera Frame Server)`).
     * *Performance Optimized:* Uses a pre-built hash table cache and fast CSV parsing via `tasklist` to minimize CPU overhead.
@@ -27,12 +32,20 @@ It is written entirely in **PowerShell**, requiring no external dependencies or 
 * An NPU (Intel AI Boost, AMD Ryzen AI, Qualcomm Hexagon, etc.)
 * PowerShell 5.1 or PowerShell 7+ (pwsh)
 
-### 2. Configuration (Crucial Step!)
-Before running, you **must** configure the script to target your specific NPU hardware.
+### 2. Usage
+Simply double-click **`run_nptop.bat`**.
+
+* This will launch the monitor in a new window.
+* The script will automatically detect your NPU and begin monitoring.
+* The execution policy will be bypassed temporarily for this session.
+* Press **`Ctrl+C`** to stop the monitor; the window will close automatically.
+
+### 3. Optional Configuration
+By default, the script auto-detects your NPU. If you have multiple hardware accelerators and need to target a specific one, you can configure the script manually:
 
 1.  Open **Task Manager** -> **Performance** tab.
 2.  Select your **NPU**.
-3.  Find the **LUID** (Locally Unique Identifier) or the device instance ID. You can often guess the LUID format from Performance Monitor counters.
+3.  Find the **LUID** (Locally Unique Identifier) or the device instance ID.
 4.  Open `nptop.ps1` in a text editor.
 5.  Modify the `$targetLuid` variable at the top of the file:
 
@@ -42,20 +55,13 @@ Before running, you **must** configure the script to target your specific NPU ha
     $targetLuid = "11D3B"
     ```
 
-### 3. Usage
-Simply double-click **`run_nptop.bat`**.
-
-* This will launch the monitor in a new window.
-* The execution policy will be bypassed temporarily for this session.
-* Press **`Ctrl+C`** to stop the monitor; the window will close automatically.
-
 ## ⚙️ Configuration
 
 You can tweak the following variables at the top of `nptop.ps1`:
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `$targetLuid` | `"11D3B"` | **Required.** The unique ID of your NPU device. |
+| `$targetLuid` | `$null` | The unique ID of your NPU device. Leave as `$null` for auto-detection. |
 | `$interval` | `1` | Sampling refresh rate in seconds. |
 | `$maxNameLength` | `60` | Max length for process names before truncation. |
 | `$minUtilization`| `0` | Minimum usage % to display. Set to `0` to show all bound processes. |
@@ -63,7 +69,7 @@ You can tweak the following variables at the top of `nptop.ps1`:
 ## 🛠️ How It Works
 
 1.  **Initialization:** The script pre-fetches all Windows Services and builds a `ShortName -> DisplayName` hash map.
-2.  **Sampling:** It queries the `\GPU Engine(*engtype_3D)\Utilization Percentage` performance counter (Windows treats NPUs as compute/3D engines).
+2.  **Sampling:** It queries the `\GPU Engine(*luid*)\Utilization Percentage` performance counter (Windows treats NPUs as compute or 3D engines) using wildcards to support both legacy and newer MCDM drivers.
 3.  **Enrichment:**
     * For standard processes, it retrieves the name via `Get-Process`.
     * For `svchost.exe`, it executes `tasklist /svc` to get the service key, then looks up the full display name from the memory cache.
@@ -72,7 +78,8 @@ You can tweak the following variables at the top of `nptop.ps1`:
 ## ⚠️ Troubleshooting
 
 **Q: It says "No active processes" or usage is always 0%.**
-A: Your `$targetLuid` is likely incorrect. Use `Typeperf "\GPU Engine(*)\*"` in PowerShell to list available counters and find the correct LUID string for your NPU.
+A: Your NPU might be asleep, or the LUID auto-detection picked the wrong hardware (e.g., an integrated GPU). Follow the "Optional Configuration" steps to manually assign the correct LUID. You can use the following PowerShell command to list available hardware strings and find your LUID:
+`(Get-Counter -ListSet "GPU Engine").PathsWithInstances | Select-String "luid" | Select-Object -First 10`
 
 **Q: The window closes immediately.**
 A: This usually means a syntax error or a missing file. Try running `run_nptop.bat` from a command prompt (CMD) to see any error messages before the window closes.
