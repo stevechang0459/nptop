@@ -152,7 +152,7 @@ try {
             $script:currentLineCount = 0
 
             # --- Data Retrieval ---
-            $path = "\GPU Engine(*luid*$targetLuid*engtype_3D)\Utilization Percentage"
+            $path = "\GPU Engine(*luid*$targetLuid*)\Utilization Percentage"
             $counters = Get-Counter -Counter $path -SampleInterval $interval -ErrorAction Stop
             $samples = $counters.CounterSamples
 
